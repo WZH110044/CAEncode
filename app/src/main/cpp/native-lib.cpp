@@ -7,12 +7,14 @@
 
 #include <android/log.h>
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,"testff",__VA_ARGS__)
+#define XLOGE(...)  __android_log_print(ANDROID_LOG_ERROR,"testff",__VA_ARGS__)
 extern "C"{
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/opt.h>
 #include <libavutil/dict.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/log.h>
 #include <sys/syscall.h>
 #include <x264.h>
 #include "libavutil/frame.h"
@@ -79,11 +81,12 @@ private:
 
 public:
     ffAudioencodec(){
+
         fopen(Aurl,"wb+");
         int ret = 0;
         //注册编码器
         av_register_all();
-        pcodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+        pcodec = avcodec_find_encoder_by_name("libfdk_aac");
         if (!pcodec) {
             LOGW("Codec  not found\n");
             //exit(1);
@@ -93,16 +96,17 @@ public:
             LOGW("Could not allocate video codec context\n");
             //  exit(1);
         }
+        pCodecCtx->codec = pcodec;
         //pCodecCtx = audio_st->codec;
         //pCodecCtx->codec_id = fmt->audio_codec;
-//        pCodecCtx->codec_id = AV_CODEC_ID_AAC;
-//        pCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
-//        pCodecCtx->sample_fmt = AV_SAMPLE_FMT_S16;
-//        pCodecCtx->sample_rate= 44100;
-//        pCodecCtx->channel_layout=AV_CH_LAYOUT_STEREO;
-////        pCodecCtx->channels = av_get_channel_layout_nb_channels(pCodecCtx->channel_layout);
-////        pCodecCtx->channels = av_get_channel_layout_nb_channels(pCodecCtx->channel_layout);
-//        pCodecCtx->bit_rate = 64000;
+        pCodecCtx->codec_id = AV_CODEC_ID_AAC;
+        pCodecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
+        pCodecCtx->sample_fmt = AV_SAMPLE_FMT_S16;
+        pCodecCtx->sample_rate= 44100;
+        pCodecCtx->channel_layout=AV_CH_LAYOUT_STEREO;
+        pCodecCtx->channels = av_get_channel_layout_nb_channels(pCodecCtx->channel_layout);
+//        pCodecCtx->channels = av_get_channel_layout_nb_channels(pCodecCtx->channel_layout);
+        pCodecCtx->bit_rate = 64000;
 //
         if (avcodec_open2(pCodecCtx, pcodec, NULL) < 0) {
             LOGW("AVcodec初始化失败");
@@ -147,7 +151,7 @@ public:
 
         //(uint16_t*)pFrame->data[0];
         memcpy(frame_buf,data,Asize);
-        //memcpy(pFrame->data[1],data,Asize);
+//        memcpy(pFrame->data[1],data,Asize);
 //        int ret;
 //        /* send the frame for encoding */
 //        ret = avcodec_send_frame(pCodecCtx, pFrame);

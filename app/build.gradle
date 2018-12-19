@@ -2,9 +2,10 @@ apply plugin: 'com.android.application'
 
 android {
     compileSdkVersion 26
+    buildToolsVersion '26.0.2'
     defaultConfig {
         applicationId "com.example.a36970.myapplication"
-        minSdkVersion 22
+        minSdkVersion 21
         targetSdkVersion 26
         versionCode 1
         versionName "1.0"
@@ -38,8 +39,12 @@ android {
 }
 allprojects {
     repositories {
+        flatDir {
+            dirs 'libs'
+        }
         jcenter()
         google()
+        maven { url "https://maven.google.com"}
     }
 }
 dependencies {

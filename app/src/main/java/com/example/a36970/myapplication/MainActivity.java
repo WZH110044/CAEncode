@@ -107,15 +107,15 @@ private AudioRecord recorder;
         startAudio();
         startAudioThread();
         Log.d("ss", "采集");
-        startCameraThread();
-        encodeimagethread();
+       // startCameraThread();
+       // encodeimagethread();
         Log.d(Integer.toString(android.os.Process.myTid()), "oncreat: 当前线程ID");
         if (!mTextureView.isAvailable()) {
             Log.d("ss", "onResume: 进来了 ");
             //可用事件在监听器触发相机
-            mTextureView.setSurfaceTextureListener(mTextureListener);
+            //mTextureView.setSurfaceTextureListener(mTextureListener);
         } else {
-            startPreview();
+           // startPreview();
         }
     }
 
