@@ -30,6 +30,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.TextView;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -56,13 +57,15 @@ public class MainActivity extends AppCompatActivity {
     private int takeptr = 0;
     private int readptr = 0;
     private int priority = -10;
-
+    private long Ctime = 0;
     private Semaphore semaphore = new Semaphore(0,true);
 
     private long ret;
     private String mCameraId;
     private Size mPreviewSize;
     private Size mCaptureSize;
+    private HandlerThread muxThread;
+    private Handler muxHandler;
     private HandlerThread mCameraThread;
     private HandlerThread mEncodeThread;
     private HandlerThread mEncodeimageThread;
@@ -81,11 +84,15 @@ public class MainActivity extends AppCompatActivity {
     private int Jheight = 1080;
     private int count = 0;
     private byte[][][] framequeue;
+    private byte[] framemux;
+    private byte[] h264buffer;
     private int queuecount = 0;
     private int buffersize;
     private int Audiocount = 0;
     private long Audioclassresult;
     private byte[][] AudioData;
+    private long AudioTime = 0;
+    private HardEncode hard = new HardEncode();
     //    private int Cwidth = 1;
 //    private int Cheight;
 private AudioRecord recorder;
@@ -98,24 +105,26 @@ private AudioRecord recorder;
         setContentView(R.layout.activity_main);
         mTextureView = (TextureView)findViewById(R.id.sample);
         mTextview = (TextView)findViewById(R.id.text);
+
+
     }
     @Override
     protected void onResume(){
         super.onResume();
        // final JAudiothread Judio = new JAudiothread();
         //开始音频采集
-        startAudio();
-        startAudioThread();
+        //startAudio();
+        //startAudioThread();
         Log.d("ss", "采集");
-       // startCameraThread();
-       // encodeimagethread();
+        startCameraThread();
+        encodeimagethread();
         Log.d(Integer.toString(android.os.Process.myTid()), "oncreat: 当前线程ID");
         if (!mTextureView.isAvailable()) {
             Log.d("ss", "onResume: 进来了 ");
             //可用事件在监听器触发相机
-            //mTextureView.setSurfaceTextureListener(mTextureListener);
+            mTextureView.setSurfaceTextureListener(mTextureListener);
         } else {
-           // startPreview();
+            startPreview();
         }
     }
 
@@ -126,11 +135,15 @@ private AudioRecord recorder;
         //destroyenclode(ret);
     }
     private void getqueue() throws InterruptedException {
+        Log.d("ss", "采集时间"+Long.toString(Ctime));
         Log.i(Integer.toString(semaphore.availablePermits()), "getqueue:队列长度 ");
         semaphore.acquire();
                 Log.w("正在编码帧" + Integer.toString(queuecount), "getqueue:%d ");
                 Log.w("待编码帧" + Integer.toString(count), "getqueue: ");
-                EncodeFrame(ret, framequeue[takeptr][0], framequeue[takeptr][1], queuecount);
+                System.arraycopy(framequeue[takeptr][0], 0, framemux, 0, framequeue[takeptr][0].length);
+                System.arraycopy(framequeue[takeptr][1], 0, framemux, framequeue[takeptr][0].length, framequeue[takeptr][1].length);
+                hard.encode(framemux,Jheight*Jwidth*3/2,h264buffer);
+        //EncodeFrame(ret, framequeue[takeptr][0], framequeue[takeptr][1], queuecount,Ctime);
                 if(semaphore.availablePermits()>5&&Process.getThreadPriority(android.os.Process.myTid())>-15)
                     Process.setThreadPriority(--priority);
                 if (++takeptr == 10)
@@ -154,14 +167,16 @@ private AudioRecord recorder;
             @Override
             public void run() {
                 recorder.startRecording();
+                AudioTime = System.currentTimeMillis();
                 Log.d("ss", "onResume: 读取音频循环"+Integer.toString(buffersize));
                 while(recorder.getRecordingState()==AudioRecord.RECORDSTATE_RECORDING){
-                   int ReadResult =  recorder.read(AudioData[readptr],0,buffersize);
+                   int ReadResult =  recorder.read(AudioData[readptr],0,4096);
                    if(ReadResult>0){
                        Log.i("编码音频帧", "run: ");
-                       Log.d("ss", "onResume: 读取音频循环"+Byte.toString(AudioData[readptr][3]));
+                       Log.d("ss", "onResume: 读取音频循环"+Integer.toString(ReadResult));
+                       Log.d("ss", "采集yinpin时间"+Long.toString(AudioTime));
+                       EncodeAudio(Audioclassresult,AudioData[readptr],Audiocount++,AudioTime);
 
-                       EncodeAudio(Audioclassresult,AudioData[readptr],Audiocount,ReadResult);
                        if(readptr++ == 9)
                            readptr = 0;
                    }
@@ -198,6 +213,16 @@ private AudioRecord recorder;
         mCameraThread = new HandlerThread("CameraThread");
         mCameraThread.start();
         mCameraHandler = new Handler(mCameraThread.getLooper());
+    }
+    private void startmuxThread() {
+        muxThread = new HandlerThread("muxThread"){
+            @Override
+            public void run() {
+                muxing(Ctime,AudioTime);
+            }
+        };
+        muxThread.start();
+        muxHandler = new Handler(mCameraThread.getLooper());
     }
     private void encodeimagethread(){
         mEncodeimageThread = new HandlerThread("imagethread");
@@ -267,10 +292,13 @@ private AudioRecord recorder;
                 Log.d("拍照尺寸", mCaptureSize.toString());
                 {
                     framequeue = new byte[10][2][];
+
                 }
 
                     //初始化url与宽高
                     encodeinit("/sdcard/109.txt",Jwidth ,Jheight);
+                    framemux = new byte[Jwidth*Jheight*2];
+                    h264buffer = new byte[Jwidth*Jheight];
                     //创建jni中Encodec对象
                     ret = createEncodeobject();
                     startEncodeThread();
@@ -297,6 +325,10 @@ private AudioRecord recorder;
                 while(image == null){
                     return;
                 }
+                    if(count == 0){
+                        Ctime = System.currentTimeMillis();
+                        //startmuxThread();
+                }
                 //我们可以将这帧数据转成字节数组，类似于Camera1的PreviewCallback回调的预览帧数据
                 ByteBuffer buffer = image.getPlanes()[0].getBuffer();
                 ByteBuffer buffer2 =image.getPlanes()[1].getBuffer();
@@ -307,6 +339,9 @@ private AudioRecord recorder;
                             // framequeue[count%10][2] = new byte[buffer3.remaining()];
                             buffer.get(framequeue[putptr][0]);
                             buffer2.get(framequeue[putptr][1]);
+//                    System.arraycopy(framequeue[putptr][0], 0, framemux, 0, framequeue[putptr][0].length);
+//                    System.arraycopy(framequeue[putptr][1], 0, framemux, framequeue[putptr][0].length, framequeue[putptr][1].length);
+//                    hard.input(framemux,Jheight*Jwidth*3/2);
 
                     Log.d(Integer.toString(count), "接受帧数：");
                     image.close();
@@ -346,14 +381,7 @@ private AudioRecord recorder;
         }
         return sizeMap[0];
     }
-//    public static int returnLength(byte[] data) {
-//        int i = 0;
-//        for (; i < data.length; i++) {
-//            if (data[i] == '\0')
-//                break;
-//        }
-//        return i;
-//    }
+
     private void openCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
@@ -398,7 +426,9 @@ private AudioRecord recorder;
         mSurfaceTexture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
 
         Surface previewSurface = new Surface(mSurfaceTexture);
+
         try {
+            hard.init();
             //createCaptureRequest创建Capturerequest.builder，TEMPLATE_PREVIEW指的是预览，还有拍照等参数
             mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mCaptureRequestBuilder.addTarget(mImageReader.getSurface());
@@ -427,6 +457,8 @@ private AudioRecord recorder;
             }, mCameraHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
     //检查有无摄像头
@@ -448,10 +480,11 @@ private AudioRecord recorder;
     public native String stringFromJNI();
     public native boolean Open(String url,Object handle);
     public native void encodeinit(String url,int width ,int height);
-    public native void EncodeFrame(long encodecAddr , byte[] data,byte[] data2,int i);
+    public native void EncodeFrame(long encodecAddr , byte[] data,byte[] data2,int i,long time);
     private native long createEncodeobject();
     private native long createAudioencode();
     private native void AudioEncodeInit(String url ,int size);
     public native void destroyenclode(long encodecAddr);
-    public native void EncodeAudio(long encodedAddr,byte[] data,int i,int size);
+    public native void EncodeAudio(long encodedAddr,byte[] data,int i,long time);
+    public native void muxing(long timeA,long timeC);
 }

@@ -23,11 +23,15 @@ extern "C"{
 }
 const char *Curl = NULL;
 const char *Aurl = NULL;
-unsigned char *chars = (unsigned char*)malloc(2000000);
+unsigned char *chars = (unsigned char*)malloc(200);
 int Cwidth,Cheight = 0;
 int flag = 0;
 int size = 0;
+int64_t Atime = 0;
+int64_t Ctime = 0;
 FILE *fp;
+AVPacket Aud[10];
+AVPacket Cam[10];
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_example_a36970_myapplication_MainActivity_stringFromJNI(
@@ -68,6 +72,16 @@ void *write(void *arg){
     LOGW("写入成功");
     flag = 0;}
 }
+void muxingAC(long timeA, long timeC){
+    AVFormatContext *oc = NULL;
+    avformat_alloc_output_context2(&oc, NULL, NULL, "/sdcard/a.mpeg");
+    if (!oc) {
+        avformat_alloc_output_context2(&oc, NULL, "mpeg", "/sdcard/a.mpeg");
+    }
+    if (!oc)
+        return;
+
+}
 class ffAudioencodec{
 private:
     AVCodec *pcodec = NULL;
@@ -79,10 +93,11 @@ private:
     uint8_t* frame_buf = NULL;
     FILE *fpA = NULL;
 
+
 public:
     ffAudioencodec(){
 
-        fopen(Aurl,"wb+");
+        fpA = fopen(Aurl,"wb+");
         int ret = 0;
         //注册编码器
         av_register_all();
@@ -104,7 +119,7 @@ public:
         pCodecCtx->sample_fmt = AV_SAMPLE_FMT_S16;
         pCodecCtx->sample_rate= 44100;
         pCodecCtx->channel_layout=AV_CH_LAYOUT_STEREO;
-        pCodecCtx->channels = av_get_channel_layout_nb_channels(pCodecCtx->channel_layout);
+        pCodecCtx->channels = 2;
 //        pCodecCtx->channels = av_get_channel_layout_nb_channels(pCodecCtx->channel_layout);
         pCodecCtx->bit_rate = 64000;
 //
@@ -133,45 +148,60 @@ public:
         pFrame->channel_layout = pCodecCtx->channel_layout;
         pFrame->channels = 2;
         av_frame_get_buffer(pFrame, 0);
+        Asize = av_samples_get_buffer_size(NULL, pCodecCtx->channels, pCodecCtx->frame_size, pCodecCtx->sample_fmt, 0);
         LOGW("音频初始化成功");
+
     }
     void startencode(jbyte* data,int i){
         //Asize  = av_samples_get_buffer_size(NULL,pCodecCtx->channels,pCodecCtx->frame_size,pCodecCtx->sample_fmt, 1);
-        Asize = av_samples_get_buffer_size(NULL, pCodecCtx->channels, pCodecCtx->frame_size, pCodecCtx->sample_fmt, 0);
+
        // Asize = 4096;
         //samples = (uint16_t*)pFrame->data[0];
         if(Asize < 0 ){
             LOGW("音频调试信息 获取size失败");
         }
         frame_buf = (uint8_t *)av_malloc(Asize);
+        int ret = 0;
 
-        int ret = avcodec_fill_audio_frame(pFrame , pCodecCtx->channels, pCodecCtx->sample_fmt , (const uint8_t*)frame_buf, size, 0);
-        //pFrame->data[0] = data;
        // avcodec_fill_audio_frame(pFrame, pCodecCtx->channels, pCodecCtx->sample_fmt,samples, Asize, 1);
-
         //(uint16_t*)pFrame->data[0];
-        memcpy(frame_buf,data,Asize);
-//        memcpy(pFrame->data[1],data,Asize);
-//        int ret;
-//        /* send the frame for encoding */
-//        ret = avcodec_send_frame(pCodecCtx, pFrame);
-//        if (ret < 0) {
-//            fprintf(stderr, "Error sending the frame to the encoder\n");
-//            exit(1);
+        LOGW("大小%d",Asize);
+//        for(int w =0 ; w <Asize; w=w+2){
+//            frame_buf[w] = data[w];
 //        }
-//        /* read all the available output packets (in general there may be any
-//         * number of them */
-//        while (ret >= 0) {
-//            ret = avcodec_receive_packet(pCodecCtx, pkt);
-//            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-//                break;
-//            else if (ret < 0) {
-//                LOGW("ERROR");
-//            }
-//
-//            fwrite(pkt->data, 1, pkt->size, fpA);
-//            av_packet_unref(pkt);
-//        }
+       // LOGW("%d",sizeof(data)/sizeof(data[0])) ;
+        memcpy(frame_buf,data,4096);
+      //  pFrame->data[0] = frame_buf;
+        avcodec_fill_audio_frame(pFrame , pCodecCtx->channels, pCodecCtx->sample_fmt , (const uint8_t*)frame_buf, size, 0);
+        pFrame->data[0] = frame_buf;
+//        pFrame->data[0] = frame_buf;
+       // pFrame->extended_data[0] = frame_buf+2048;
+        LOGW("pts:%d",i);
+        pFrame->pts=(int64_t)(i*1024);
+//        LOGW("pts%d",(pCodecCtx->frame_size * 1000 / pCodecCtx->sample_rate));
+////        /* send the frame for encoding */
+        ret = avcodec_send_frame(pCodecCtx, pFrame);
+        if (ret < 0) {
+            LOGW("send frame failed");
+            return ;
+        }
+        /* read all the available output packets (in general there may be any
+         * number of them */
+        while (ret >= 0) {
+            ret = avcodec_receive_packet(pCodecCtx, pkt);
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+            {
+                LOGW("无数据");
+                return;
+            }
+            else if(ret<0) {
+                LOGW("encode fail");
+            } else LOGW("encode success 1 frame");
+//            fwrite(chars,1,7,fpA);
+            fwrite(pkt->data, 1, pkt->size, fpA);
+            LOGW("pts:%llu",pkt->pts);
+            av_packet_unref(pkt);
+        }
     }
 
 };
@@ -309,9 +339,15 @@ private:
     AVFrame *pFrame;
     AVPacket *pkt;
     AVDictionary *param = NULL;
+
+    //OutputStream video_st = { 0 }, audio_st = { 0 };
+    const char *filename;
+    AVOutputFormat *fmt;
     int y_size = 0;
 public:
     encodec(){
+
+
         y_size = Cwidth * Cheight;
         fp = fopen(Curl,"wb+");
 
@@ -535,11 +571,14 @@ JNIEXPORT void JNICALL
 Java_com_example_a36970_myapplication_MainActivity_EncodeFrame(JNIEnv *env, jobject instance,
                                                                jlong encodecAddr, jbyteArray data_,
                                                                jbyteArray data2_,
-                                                               jint i) {
+                                                               jint i,jlong time) {
     jbyte *data = env->GetByteArrayElements(data_, NULL);
     jbyte *data2 = env->GetByteArrayElements(data2_, NULL);
+
 //    jbyte *data3 = env->GetByteArrayElements(data3_, NULL);
 //    ((x264encodec *)encodecAddr)->encode(data,data2,i);
+    Ctime = (int64_t)time;
+    LOGW("视频时间%d",(int)(Ctime - Atime));
     ((encodec *)encodecAddr)->encode(data,data2,i);
     env->ReleaseByteArrayElements(data_, data, 0);
     env->ReleaseByteArrayElements(data2_, data2, 0);
@@ -566,10 +605,13 @@ Java_com_example_a36970_myapplication_MainActivity_createAudioencode(JNIEnv *env
 JNIEXPORT void JNICALL
 Java_com_example_a36970_myapplication_MainActivity_EncodeAudio(JNIEnv *env, jobject instance,
                                                                jlong encodedAddr, jbyteArray data_,
-                                                               jint i, jint size) {
+                                                               jint i, jlong time) {
     jbyte *data = env->GetByteArrayElements(data_, NULL);
 
     // TODO
+    Atime = (int64_t)time;
+    LOGW("音频时间%lld",Atime);
+    LOGW("pts:%d",i);
     ((ffAudioencodec *)encodedAddr)->startencode(data,i);
 
 
@@ -584,4 +626,11 @@ Java_com_example_a36970_myapplication_MainActivity_AudioEncodeInit(JNIEnv *env, 
     Aurl = url;
 
     env->ReleaseStringUTFChars(url_, url);
+}extern "C"
+JNIEXPORT void JNICALL
+Java_com_example_a36970_myapplication_MainActivity_muxing(JNIEnv *env, jobject instance,
+                                                          jlong timeA, jlong timeC) {
+
+    muxingAC(timeA, timeC);
+
 }
