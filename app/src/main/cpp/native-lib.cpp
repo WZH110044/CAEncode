@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <string>
+#include <stdio.h>
 
 #include <pthread.h>
 #include <x264.h>
@@ -21,12 +22,14 @@ extern "C"{
 #include "libswresample/swresample.h"
 #include "libavutil/channel_layout.h"
 }
+JavaVM *j_vm;
 const char *Curl = NULL;
 const char *Aurl = NULL;
 unsigned char *chars = (unsigned char*)malloc(200);
 int Cwidth,Cheight = 0;
 int flag = 0;
 int size = 0;
+jobject hardObject;
 int64_t Atime = 0;
 int64_t Ctime = 0;
 FILE *fp;
@@ -540,6 +543,51 @@ public:
     }
 };
 
+
+class hardencode{
+private:
+    jclass jcls;
+    jmethodID jmid;
+    jobject hardObject;
+    jobject hardObjectemp;
+    jmethodID java_method_encode;
+    jmethodID java_method_release;
+    JNIEnv *Env;
+    jclass jclassref;
+
+ public:
+    void Hardcodec_init(JNIEnv *env,jobject instance,int width,int height ,int bit_rate ,int frame_rate,int gop){
+
+        jcls  = env->FindClass("com/example/a36970/myapplication/HardEncode");
+        // = (jclass)env->NewGlobalRef(jclassref);
+        jmid = env->GetMethodID(jcls,"<init>","()V");
+        hardObjectemp = env->NewObject(jcls,jmid);
+        hardObject = env->NewGlobalRef(hardObjectemp);
+//        hardObject = env->NewGlobalRef(hardObjectemp);
+
+        jmethodID java_method_init = env->GetMethodID(jcls, "init", "(IIIII)V");
+
+        java_method_encode = env->GetMethodID(jcls, "encode", "([B[B)I");
+        java_method_release = env->GetMethodID(jcls, "release", "()V");
+        env->CallVoidMethod(hardObject,java_method_init,width,height,bit_rate,frame_rate,gop);
+        //return hardObject;
+    }
+
+    int Hardcodec_encode(JNIEnv *env, jbyte* YUVbuffer,jbyte* h264buffer){
+
+//        JavaVM* g_vm;
+       // Env = NULL;
+//        jbyteArray
+        //g_vm->GetEnv((void **)&Env,JNI_VERSION_1_4);
+        env->CallIntMethod(hardObject,java_method_encode,YUVbuffer,h264buffer);
+//        return env->CallIntMethod(hardObject,java_method_encode,YUVbuffer,h264buffer);
+        return 0;
+    }
+
+    void Hardcodec_release(){
+        Env->CallVoidMethod(hardObject,java_method_release);
+    }
+};
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_example_a36970_myapplication_MainActivity_encodeinit(JNIEnv *env, jobject instance,
@@ -561,7 +609,10 @@ Java_com_example_a36970_myapplication_MainActivity_createEncodeobject(JNIEnv *en
     LOGW("初始化");
         jlong result;
 //       result  = (jlong)new x264encodec();
-        result  = (jlong)new encodec();
+//        result  = (jlong)new encodec();
+    result = (jlong)new hardencode();
+    ((hardencode *)result)->Hardcodec_init(env,instance,Cwidth,Cheight,40000000,30,5);
+
       LOGW("初始化结束");
         return result;
 
@@ -579,7 +630,8 @@ Java_com_example_a36970_myapplication_MainActivity_EncodeFrame(JNIEnv *env, jobj
 //    ((x264encodec *)encodecAddr)->encode(data,data2,i);
     Ctime = (int64_t)time;
     LOGW("视频时间%d",(int)(Ctime - Atime));
-    ((encodec *)encodecAddr)->encode(data,data2,i);
+    //((encodec *)encodecAddr)->encode(data,data2,i);
+    int b = ((hardencode *)encodecAddr)->Hardcodec_encode(env,data,data2);
     env->ReleaseByteArrayElements(data_, data, 0);
     env->ReleaseByteArrayElements(data2_, data2, 0);
     //env->ReleaseByteArrayElements(data3_, data3, 0);
@@ -631,6 +683,6 @@ JNIEXPORT void JNICALL
 Java_com_example_a36970_myapplication_MainActivity_muxing(JNIEnv *env, jobject instance,
                                                           jlong timeA, jlong timeC) {
 
-    muxingAC(timeA, timeC);
+    // TODO
 
 }
