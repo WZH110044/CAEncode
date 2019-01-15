@@ -21,7 +21,7 @@ public class HardEncode {
     private ByteBuffer outputBuffer;
     private ByteBuffer inputBuffer;
     private byte[] dst ;
-    private int pts= 1;
+    private int pts= 0;
     private static int size = 0;
     private FileOutputStream fos;
     private MediaCodec.BufferInfo bufferInfo;
@@ -51,7 +51,7 @@ public class HardEncode {
         mformat.setInteger(MediaFormat.KEY_FRAME_RATE, frame_rate);
         mformat.setInteger(MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible);
-        mformat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, gop);
+//        mformat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, gop);
         mformat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,1);
 
         hardcodec.configure(mformat,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);
@@ -94,19 +94,24 @@ public class HardEncode {
             inputBuffer.clear();
             //填入数据
             inputBuffer.put(YUVbuffer,0,size);
-            hardcodec.queueInputBuffer(inputBufferId,0,size,pts++,0);
+            hardcodec.queueInputBuffer(inputBufferId,0,size,pts,0);
+            pts= pts+33000;
         }else{
             //获取缓冲区失败
             return -2;
         }
+        Log.i("encode", "encode: 输入成功");
         /******************************************************************************************/
         //阻塞等待编码完成
         int outputBufferId = hardcodec.dequeueOutputBuffer(bufferInfo,-1);
         //编码完成，取数据
         Log.i("bufferinfo帧大小", "encode: "+ bufferInfo.size);
+        if(outputBufferId == -2){
+//            hardcodec.releaseOutputBuffer(outputBufferId, false);
+            outputBufferId = hardcodec.dequeueOutputBuffer(bufferInfo,-1);
+        }
 
-
-        if (outputBufferId >= 0) {
+        while (outputBufferId >= 0) {
             //Log.i("循环获取缓冲区数据", "encode: ff");
             outputBuffer = hardcodec.getOutputBuffer(outputBufferId);
             outputBuffer.get(h264buffer,0, bufferInfo.size);
@@ -117,21 +122,31 @@ public class HardEncode {
             }else if(bufferInfo.flags == MediaCodec.BUFFER_FLAG_CODEC_CONFIG){
                 Log.i("bufferinfo帧类型", "encode: 配置帧");
                 fos.write(h264buffer,0,bufferInfo.size);
+                hardcodec.releaseOutputBuffer(outputBufferId, false);
+                 outputBufferId = hardcodec.dequeueOutputBuffer(bufferInfo,-1);
+                Log.i("bufferinfo帧大小", "encode: "+ bufferInfo.size);
+                outputBuffer = hardcodec.getOutputBuffer(outputBufferId);
+                outputBuffer.get(h264buffer,0, bufferInfo.size);
+                fos.write(h264buffer,0,bufferInfo.size);
+                break;
+//                fos.write(h264buffer,0,bufferInfo.size);
             }else{
                 Log.i("bufferinfo帧类型", "encode: 其他");
+                fos.write(h264buffer,0,bufferInfo.size);
             }
             hardcodec.releaseOutputBuffer(outputBufferId, false);
             //outputBufferId = hardcodec.dequeueOutputBuffer(bufferInfo, -1);
             Log.i("hardencode", "encode: 结束");
             return bufferInfo.size;
-        }else{
-            //获取缓冲区失败
-            Log.i("hardencode", "encode: 结束");
-            return -1;
         }
+//        else{
+//            //获取缓冲区失败
+//            Log.i("hardencode", "encode: 结束");
+//            return -1;
+//        }
 
 //
-
+        return bufferInfo.size;
     }
 
 }

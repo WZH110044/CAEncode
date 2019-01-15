@@ -94,6 +94,7 @@ public class MainActivity extends AppCompatActivity {
     private long AudioTime = 0;
     private HardEncode hard = new HardEncode();
     private YXAvcEncoder YXhard = new YXAvcEncoder();
+//    private FileOutputStream fos;
     //    private int Cwidth = 1;
 //    private int Cheight;
 private AudioRecord recorder;
@@ -117,7 +118,11 @@ private AudioRecord recorder;
         //startAudio();
         //startAudioThread();
         Log.d("ss", "采集");
-        startCameraThread();
+        try {
+            startCameraThread();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         encodeimagethread();
         Log.d(Integer.toString(android.os.Process.myTid()), "oncreat: 当前线程ID");
         if (!mTextureView.isAvailable()) {
@@ -144,8 +149,9 @@ private AudioRecord recorder;
                 System.arraycopy(framequeue[takeptr][0], 0, framemux, 0, framequeue[takeptr][0].length);
                 System.arraycopy(framequeue[takeptr][1], 0, framemux, framequeue[takeptr][0].length, framequeue[takeptr][1].length);
 //                EncodeFrame(ret,framemux,h264buffer,queuecount,Ctime);
-//                int bb = hard.encode(framemux,h264buffer);
-                YXhard.encodeVideoFromBuffer(framemux,h264buffer);
+                int bb = hard.encode(framemux,h264buffer);
+//                int bb = YXhard.encodeVideoFromBuffer(framemux,h264buffer);
+//                if(bb>0) {fos.write(h264buffer,0,bb);}
 //                if(bb == 32){
 //                    onDestroy();
 //                }
@@ -218,7 +224,8 @@ private AudioRecord recorder;
         mEncodeThread.start();
 
     }
-    private void startCameraThread() {
+    private void startCameraThread() throws IOException {
+//        fos = new FileOutputStream("/sdcard/111.264",true);
         mCameraThread = new HandlerThread("CameraThread");
         mCameraThread.start();
         mCameraHandler = new Handler(mCameraThread.getLooper());
@@ -437,8 +444,8 @@ private AudioRecord recorder;
         Surface previewSurface = new Surface(mSurfaceTexture);
 
         try {
-//            hard.init(1920,1080,40000000,30,5);
-            YXhard.initEncoder(1920,1080,15,2135033992,1,40000000,0,false);
+            hard.init(1920,1080,40000000,30,5);
+//          YXhard.initEncoder(1920,1080,30,2135033992,1,40000000,0,false);
             //createCaptureRequest创建Capturerequest.builder，TEMPLATE_PREVIEW指的是预览，还有拍照等参数
             mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mCaptureRequestBuilder.addTarget(mImageReader.getSurface());
@@ -468,9 +475,9 @@ private AudioRecord recorder;
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
-//        catch (IOException e) {
-//            e.printStackTrace();
-//        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
     }
     //检查有无摄像头
 //    public boolean checkCameraHardware(Context context) {

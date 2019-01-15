@@ -26,7 +26,7 @@ import static android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420F
 public class YXAvcEncoder {
     private static final String TAG 				= 	"AvcMediaEncoder";
     private static final String VIDEO_MIME_TYPE 	= 	"video/avc";
-    private static final int 	TIMEOUT_USEC 		= 	50;
+    private int 	TIMEOUT_USEC 		= 	-1;
     private static final int	maskBitRate			=	(0x1<<0);
     private static final int	maskFrameRate		=	(0x1<<1);
     private static final int	maskForceRestart	=	(0x1<<2);
@@ -350,7 +350,7 @@ public class YXAvcEncoder {
             isNeedReconfigure = false;
         }
 
-        drainOutputBuffer();
+//        drainOutputBuffer();
 
         int inputBufferIndex;
 
@@ -363,6 +363,7 @@ public class YXAvcEncoder {
                 inputBuffer.clear();
                 Log.d(TAG, "encodeVideoFromBuffer: 大小"+Integer.toString(inputBuffer.remaining()));
                 inputBuffer.put(input,0,width*height*3/2);
+                Log.i(TAG, "encodeVideoFromBuffer: "+Long.toString(pts));
                 m_mediaCodec.queueInputBuffer(inputBufferIndex, 0, width*height*3/2, pts, 0);
                 ++m_getnerateIndex;
             }
@@ -466,6 +467,7 @@ public class YXAvcEncoder {
     @SuppressLint({"NewApi", "WrongConstant"})
     private void drainOutputBuffer()
     {
+        Log.i(TAG, "drainOutputBuffer: enter drainoutputbuffer");
         MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
 
         int outputBufferIndex =0 ;
@@ -480,72 +482,6 @@ public class YXAvcEncoder {
         }
         Log.d(TAG, "drainOutputBuffer: id"+Integer.toString(outputBufferIndex));
         int m = 0;
-//        while(outputBufferIndex == -2||m == 32){
-//
-////            /m_mediaCodec.releaseOutputBuffer(outputBufferIndex,	false);
-//            try
-//            {
-//                outputBufferIndex = m_mediaCodec.dequeueOutputBuffer( bufferInfo, TIMEOUT_USEC);
-////                m_mediaCodec.releaseOutputBuffer(outputBufferIndex,	false);
-//            }
-//            catch ( Exception e)
-//            {
-//                e.printStackTrace();
-//            }
-//
-//            m = bufferInfo.size;
-
-        while (outputBufferIndex >= 0)
-        {
-            // Log.i("AvcEncoder",
-            // "Get H264 Buffer Success! flag = "+bufferInfo.flags+",pts = "+bufferInfo.presentationTimeUs+"");
-            ByteBuffer outputBuffer = getOutputBufferByIdx(outputBufferIndex);
-            byte[] outData = new byte[bufferInfo.size];
-            outputBuffer.position(bufferInfo.offset);
-            outputBuffer.limit(bufferInfo.offset
-                    + bufferInfo.size);
-            outputBuffer.get(outData);
-            Log.i(TAG, "drainOutputBuffer: "+Integer.toString(bufferInfo.size));
-            if (bufferInfo.flags == MediaCodec.BUFFER_FLAG_CODEC_CONFIG)
-            {
-                configbyte = outData;
-            }
-            else if (bufferInfo.flags == MediaCodec.BUFFER_FLAG_KEY_FRAME)
-            {
-                if ( configbyte!=null)
-                {
-                    // I帧数据里面包含关键头数据，为了统一输出格式，在这里将其去掉；
-                    if( outData[4] == configbyte[4] && (outData[configbyte.length+4]&0x1f)==5)
-                    {
-                        byte[] clipData = new byte[outData.length-configbyte.length];
-                        System.arraycopy( outData, configbyte.length, clipData, 0, clipData.length);
-                        outData = clipData;
-                    }
-                }
-                else
-                {
-                    // TODO:可能某种些手机通过两种方式都未获取到关键数据，那么这个时候关键数据一定存放在I帧里面
-                    // TODO:这个时候需要我们直接从I帧里面提取；
-                    Log.e( TAG, "I can't find configbyte!!!! NEED extract from I frame!!!");
-                }
-
-                addOutputData( outData, bufferInfo.presentationTimeUs, bufferInfo.flags);
-
-            }
-            else if( bufferInfo.flags == MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-            {
-                break;
-            }
-            else
-            {
-                addOutputData( outData, bufferInfo.presentationTimeUs, bufferInfo.flags);
-            }
-
-            m_mediaCodec.releaseOutputBuffer(outputBufferIndex,	false);
-            outputBufferIndex = m_mediaCodec.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC);
-        }
-
-//        }
         if( outputBufferIndex== MediaCodec.INFO_OUTPUT_FORMAT_CHANGED)
         {
             MediaFormat format =  m_mediaCodec.getOutputFormat();
@@ -562,6 +498,78 @@ public class YXAvcEncoder {
                 System.arraycopy( pps, 0, configbyte, sps.length, pps.length);
             }
         }
+        if(outputBufferIndex == -2){
+
+//            m_mediaCodec.releaseOutputBuffer(outputBufferIndex,	false);
+            try
+            {
+                outputBufferIndex = m_mediaCodec.dequeueOutputBuffer( bufferInfo, TIMEOUT_USEC);
+//                m_mediaCodec.releaseOutputBuffer(outputBufferIndex,	false);
+            }
+            catch ( Exception e)
+            {
+                e.printStackTrace();
+            }
+
+            m = bufferInfo.size;}
+
+        while (outputBufferIndex >= 0 )
+        {
+//            while(bufferInfo.flags == MediaCodec.BUFFER_FLAG_CODEC_CONFIG) {
+                // Log.i("AvcEncoder",
+                // "Get H264 Buffer Success! flag = "+bufferInfo.flags+",pts = "+bufferInfo.presentationTimeUs+"");
+                ByteBuffer outputBuffer = getOutputBufferByIdx(outputBufferIndex);
+                byte[] outData = new byte[bufferInfo.size];
+                outputBuffer.position(bufferInfo.offset);
+                outputBuffer.limit(bufferInfo.offset
+                        + bufferInfo.size);
+                outputBuffer.get(outData);
+                Log.i(TAG, "drainOutputBuffer: " + Integer.toString(bufferInfo.size));
+                if (bufferInfo.flags == MediaCodec.BUFFER_FLAG_CODEC_CONFIG) {
+                    Log.i("bufferinfo帧类型", "encode: 配置帧");
+                    configbyte = outData;
+                    m_mediaCodec.releaseOutputBuffer(outputBufferIndex, false);
+                    outputBufferIndex =m_mediaCodec.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC);
+                    Log.d(TAG, "drainOutputBuffer: id"+Integer.toString(outputBufferIndex));
+//                    TIMEOUT_USEC = 50;
+                    continue;
+
+                } else if (bufferInfo.flags == MediaCodec.BUFFER_FLAG_KEY_FRAME) {
+                    Log.i("bufferinfo帧类型", "encode: 关键帧");
+                    if (configbyte != null) {
+                        // I帧数据里面包含关键头数据，为了统一输出格式，在这里将其去掉；
+                        if (outData[4] == configbyte[4] && (outData[configbyte.length + 4] & 0x1f) == 5) {
+                            Log.i(TAG, "drainOutputBuffer: 去掉I帧头");
+                            byte[] clipData = new byte[outData.length - configbyte.length];
+                            System.arraycopy(outData, configbyte.length, clipData, 0, clipData.length);
+                            outData = clipData;
+                        }
+                    } else {
+                        // TODO:可能某种些手机通过两种方式都未获取到关键数据，那么这个时候关键数据一定存放在I帧里面
+                        // TODO:这个时候需要我们直接从I帧里面提取；
+                        Log.e(TAG, "I can't find configbyte!!!! NEED extract from I frame!!!");
+                    }
+
+                    addOutputData(outData, bufferInfo.presentationTimeUs, bufferInfo.flags);
+
+                } else if (bufferInfo.flags == MediaCodec.BUFFER_FLAG_END_OF_STREAM) {
+                    break;
+                } else {
+                    Log.i("bufferinfo帧类型", "encode: 普通帧");
+                    addOutputData(outData, bufferInfo.presentationTimeUs, bufferInfo.flags);
+                }
+
+                m_mediaCodec.releaseOutputBuffer(outputBufferIndex, false);
+                break;
+            }
+
+            //outputBufferIndex = m_mediaCodec.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC);
+
+//        }
+
+//        }
+
+        Log.i(TAG, "drainOutputBuffer: leave drainoutputbuffer");
     }
     public int startEncoder()
     {
